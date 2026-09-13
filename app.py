@@ -15,14 +15,23 @@ def home():
 def health():
     return "OK"
 
+# Google Trends থেকে ডেটা ও সার্চ সংখ্যা সঠিকভাবে আনার ফাংশন
 def fetch_trends(geo="BD"):
     url = f"https://trends.google.com/trending/rss?geo={geo}"
     feed = feedparser.parse(url)
     trends = []
+    
     for entry in feed.entries[:5]:
         title = entry.get("title", "No title")
-        traffic = entry.get("ht:approx_traffic", "N/A")
-        trends.append(f"🔥 {title}\n   📊 সার্চ: {traffic}")
+        # Google Trends RSS-এর ট্রাফিক ট্যাগ চেক
+        traffic = entry.get("ht_approx_traffic", entry.get("ht:approx_traffic", None))
+        
+        text = f"🔥 *{title}*"
+        if traffic:
+            text += f"\n📊 সার্চ: {traffic}"
+        
+        trends.append(text)
+        
     return "\n\n".join(trends) if trends else "এখন কোনো ট্রেন্ড নেই।"
 
 async def start(update, context):
@@ -52,7 +61,7 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("trends", trends_command))
 
-    # Run Flask Web Server
+    # Run Flask Web Server for Render
     port = int(os.environ.get("PORT", 8080))
     server = make_server("0.0.0.0", port, app)
     loop = asyncio.get_running_loop()
@@ -67,4 +76,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-        
