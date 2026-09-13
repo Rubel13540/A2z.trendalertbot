@@ -1,6 +1,0 @@
-python-telegram-bot
-feedparser
-Flask
-werkzeug
-requests
-google-genai
