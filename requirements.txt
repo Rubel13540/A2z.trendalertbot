@@ -3,4 +3,4 @@ feedparser
 Flask
 werkzeug
 requests
-google-generativeai
+google-genai
