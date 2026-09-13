@@ -3,8 +3,8 @@ import asyncio
 import feedparser
 from flask import Flask
 from telegram.ext import ApplicationBuilder, CommandHandler
+from werkzeug.serving import make_server
 
-# Web server for Render health check
 app = Flask(__name__)
 
 @app.route('/')
@@ -15,7 +15,6 @@ def home():
 def health():
     return "OK"
 
-# Fetch Google Trends data
 def fetch_trends(geo="BD"):
     url = f"https://trends.google.com/trending/rss?geo={geo}"
     feed = feedparser.parse(url)
@@ -26,7 +25,6 @@ def fetch_trends(geo="BD"):
         trends.append(f"🔥 {title}\n   📊 সার্চ: {traffic}")
     return "\n\n".join(trends) if trends else "এখন কোনো ট্রেন্ড নেই।"
 
-# Telegram Bot Handlers
 async def start(update, context):
     await update.message.reply_text(
         "🇧🇩 হ্যালো! আমি বাংলাদেশ ট্রেন্ড অ্যালার্ট বট।\n\n"
@@ -44,7 +42,6 @@ async def trends_command(update, context):
     trend_text = fetch_trends(geo)
     await update.message.reply_text(trend_text)
 
-# Run Bot and Flask Server Together
 async def main():
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
@@ -55,14 +52,13 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("trends", trends_command))
 
-    # Start Flask Web App in background
-    from werkzeug.serving import make_server
+    # Run Flask Web Server
     port = int(os.environ.get("PORT", 8080))
     server = make_server("0.0.0.0", port, app)
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, server.serve_forever)
 
-    # Start Telegram Bot Polling
+    # Start Telegram Polling
     print("বট সফলভাবে চালু হয়েছে...")
     async with application:
         await application.start()
@@ -71,4 +67,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
+        
