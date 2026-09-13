@@ -14,19 +14,28 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is running with AI!"
+    return "Bot is running with AI & Monetization!"
 
 @app.route('/health')
 def health():
     return "OK"
 
-# ----------------- AI সেটআপ -----------------
+# ----------------- কনফিগারেশন ও ডাটাবেস -----------------
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # আপনার টেলিগ্রাম আইডি
+SPONSOR_LINK = os.getenv("SPONSOR_LINK", "https://t.me/telegram")  # আপনার চ্যানেলের বা স্পনসর লিংক
+
 ai_client = genai.Client(api_key=GEMINI_KEY) if GEMINI_KEY else None
+
+# বটের ইউজার আইডি ট্র্যাক করার মেমোরি লিস্ট
+USER_IDS = set()
+
+def register_user(user_id):
+    USER_IDS.add(user_id)
 
 def ask_ai(prompt):
     if not ai_client:
-        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি। দয়া করে GEMINI_API_KEY প্রদান করুন।"
+        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি। GEMINI_API_KEY প্রদান করুন।"
     try:
         sys_instruction = "You are a professional crypto/forex trading analyst and content creation expert. Give concise, highly helpful responses in Bengali."
         response = ai_client.models.generate_content(
@@ -36,7 +45,7 @@ def ask_ai(prompt):
         )
         return response.text
     except Exception as e:
-        return "⚠️ AI প্রসেসিং করতে সমস্যা হচ্ছে। কিছুক্ষণ পর চেষ্টা করুন।"
+        return "⚠️ AI প্রসেসিং করতে সমস্যা হচ্ছে।"
 
 # ----------------- ট্রেডিং ও ট্রেন্ড সার্ভিসেস -----------------
 def fetch_gold_btc_ratio():
@@ -101,12 +110,13 @@ def fetch_trends(geo="BD"):
         trends.append(f"🔥 *[{title}]({search_url})*\n📊 সার্চ: `{traffic}`")
     return "\n\n".join(trends) if trends else "⚠️ কোনো ট্রেন্ড পাওয়া যায়নি।"
 
-# ----------------- কিবোর্ড ও ইনলাইন অপশন -----------------
+# ----------------- কিবোর্ড ও ইনলাইন অপশন (With Ads Button) -----------------
 def get_main_inline_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🥇 Gold/BTC সিগন্যাল", callback_data="gold_btc"), InlineKeyboardButton("🐋 Whale Alert", callback_data="whale_alert")],
         [InlineKeyboardButton("💰 ক্রিপ্টো প্রাইস", callback_data="crypto_live"), InlineKeyboardButton("🇧🇩 BD ট্রেন্ডস", callback_data="trend_BD")],
-        [InlineKeyboardButton("🤖 AI ট্রেডিং পরামর্শ", callback_data="ai_help")]
+        [InlineKeyboardButton("🤖 AI ট্রেডিং পরামর্শ", callback_data="ai_help")],
+        [InlineKeyboardButton("📢 স্পনসর / ভিআইপি অফার 🔥", url=SPONSOR_LINK)]  # বিজ্ঞাপন বা চ্যানেল বাটন
     ])
 
 def get_reply_keyboard():
@@ -120,6 +130,9 @@ def get_reply_keyboard():
 user_state = {}
 
 async def start(update, context):
+    user_id = update.message.from_user.id
+    register_user(user_id)
+    
     welcome = (
         "🚀 *প্রো-ট্রেডার & AI অ্যাসিস্ট্যান্ট বটে স্বাগতম!*\n\n"
         "এখানে লাইভ মার্কেট ডাটা ও ট্রেন্ডের পাশাপাশি পাবেন *গুগল জেমিনি AI অ্যানালাইজার*।\n\n"
@@ -128,8 +141,47 @@ async def start(update, context):
     await update.message.reply_text("স্মার্ট কিবোর্ড চালু হয়েছে।", reply_markup=get_reply_keyboard())
     await update.message.reply_text(welcome, reply_markup=get_main_inline_keyboard(), parse_mode='Markdown')
 
+# এডমিন ব্রডকাস্ট কমান্ড (/broadcast আপনার মেসেজ)
+async def broadcast_command(update, context):
+    user_id = update.message.from_user.id
+    
+    # এডমিন ফিল্টারিং (ADMIN_ID সেট থাকলে সিকিউরিটি চেক করবে)
+    if ADMIN_ID != 0 and user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ আপনি এই কমান্ডটি ব্যবহার করতে পারবেন না।")
+        return
+
+    if not context.args:
+        await update.message.reply_text("⚠️ ব্যবহার পদ্ধতি: `/broadcast আপনার স্পনসর বা মেসেজ বার্তা`", parse_mode='Markdown')
+        return
+
+    broadcast_msg = " ".join(context.args)
+    success_count = 0
+    fail_count = 0
+
+    await update.message.reply_text(f"⏳ {len(USER_IDS)} জন ইউজারের কাছে মেসেজ পাঠানো শুরু হচ্ছে...")
+
+    for uid in list(USER_IDS):
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text=f"📢 *বিশেষ নোটিশ / স্পনসর আপডেট:*\n\n{broadcast_msg}",
+                parse_mode='Markdown'
+            )
+            success_count += 1
+            await asyncio.sleep(0.05)  # Telegram API limit রক্ষা করার জন্য রেট লিমিট
+        except Exception:
+            fail_count += 1
+
+    await update.message.reply_text(
+        f"✅ *ব্রডকাস্ট সম্পন্ন হয়েছে!*\n\n"
+        f"🟢 সফল: {success_count}\n"
+        f"🔴 ব্যর্থ: {fail_count}",
+        parse_mode='Markdown'
+    )
+
 async def handle_message(update, context):
     user_id = update.message.from_user.id
+    register_user(user_id)
     text = update.message.text
 
     if text == "🏠 মূল মেনু":
@@ -137,7 +189,7 @@ async def handle_message(update, context):
         await start(update, context)
     elif text == "🤖 AI ট্রেডিং পরামর্শ":
         user_state[user_id] = "WAITING_FOR_AI_QUERY"
-        await update.message.reply_text("🧠 *AI প্রস্তুত!* আপনার যেকোনো ট্রেডিং প্রশ্ন বা কন্টেন্ট টিপস মেসেজে লিখে পাঠান (যেমন: `বিটকয়েন এর নেক্সট সাপোর্ট কোথায়?`):", parse_mode='Markdown')
+        await update.message.reply_text("🧠 *AI প্রস্তুত!* আপনার যেকোনো ট্রেডিং প্রশ্ন বা কন্টেন্ট টিপস মেসেজে লিখে পাঠান:", parse_mode='Markdown')
     elif user_state.get(user_id) == "WAITING_FOR_AI_QUERY":
         user_state[user_id] = None
         await update.message.reply_text("⏳ *AI উত্তর তৈরি করছে...*", parse_mode='Markdown')
@@ -153,17 +205,17 @@ async def handle_message(update, context):
         msg = fetch_trends("BD")
         await update.message.reply_text(f"🇧🇩 *বাংলাদেশ ট্রেন্ডস:*\n\n{msg}", parse_mode='Markdown', disable_web_page_preview=True, reply_markup=get_main_inline_keyboard())
     else:
-        # সাধারণ বার্তা সরাসরি AI-তে যাবে
         await update.message.reply_text("⏳ *AI চিন্তা করছে...*", parse_mode='Markdown')
         ai_response = ask_ai(text)
         await update.message.reply_text(f"🤖 *AI অ্যানালাইসিস:*\n\n{ai_response}", parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
 
 async def button_click(update, context):
     query = update.callback_query
+    user_id = query.from_user.id
+    register_user(user_id)
     await query.answer()
 
     if query.data == "ai_help":
-        user_id = query.from_user.id
         user_state[user_id] = "WAITING_FOR_AI_QUERY"
         await query.edit_message_text("🧠 *AI প্রস্তুত!* আপনার ট্রেডিং প্রশ্ন বা কন্টেন্ট প্রম্পট লিখে মেসেজ পাঠান:", parse_mode='Markdown')
     elif query.data == "gold_btc":
@@ -185,7 +237,9 @@ async def main():
         return
 
     application = ApplicationBuilder().token(token).build()
+    
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("broadcast", broadcast_command))  # ব্রডকাস্ট হ্যান্ডলার
     application.add_handler(CallbackQueryHandler(button_click))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -202,4 +256,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-      
