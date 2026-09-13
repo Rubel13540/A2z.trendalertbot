@@ -2,3 +2,4 @@ python-telegram-bot
 feedparser
 Flask
 werkzeug
+google-genai
