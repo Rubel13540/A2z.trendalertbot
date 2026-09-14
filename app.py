@@ -21,7 +21,10 @@ def health():
 
 # ----------------- কনফিগারেশন -----------------
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-ODDS_API_KEY = os.getenv("ODDS_API_KEY") # The Odds API Key
+
+# Railway Variable নাম নিরাপদ রাখার জন্য
+ODDS_API_KEY = os.getenv("ODDS_API_KEY") or os.getenv("odds_api_key")
+
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 VIP_LINK = os.getenv("SPONSOR_LINK", "https://t.me/telegram")
 
@@ -33,7 +36,7 @@ def register_user(user_id):
 
 def ask_ai_prediction(match_info):
     if not ai_client:
-        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি।"
+        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি। GEMINI_API_KEY দিন।"
     try:
         sys_instruction = (
             "You are a cautious sports analyst. Provide safe, low-risk betting predictions "
@@ -48,25 +51,26 @@ def ask_ai_prediction(match_info):
     except Exception:
         return "⚠️ AI অ্যানালাইসিস করতে সমস্যা হচ্ছে।"
 
-# ----------------- লাইভ API ডাটা ফেচিং (আগামী ১২ ঘণ্টা) -----------------
+# ----------------- লাইভ API ডাটা (আগামী ১২ ঘণ্টা) -----------------
 
 def fetch_live_matches(sport_key):
-    """
-    sport_key উদাহরণ: 
-    - soccer_epl (English Premier League)
-    - soccer_spain_la_liga (La Liga)
-    - cricket_international (Cricket)
-    - soccer_usa_mls
-    """
-    if not ODDS_API_KEY:
-        return "⚠️ `ODDS_API_KEY` সেট করা হয়নি! রিয়েল টাইম ডাটা পেতে API Key যুক্ত করুন।"
+    # API Key পুনরায় চেক
+    api_key = os.getenv("ODDS_API_KEY") or os.getenv("odds_api_key")
+    
+    if not api_key:
+        return "⚠️ `ODDS_API_KEY` সেট করা হয়নি! Railway থেকে অ্যাপটি 'Redeploy' দিন।"
 
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
+    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={api_key.strip()}&regions=eu&markets=h2h"
     
     try:
         res = requests.get(url, timeout=10).json()
-        if not isinstance(res, list):
-            return "⚠️ এই মুহূর্তে এই লিগের কোনো ম্যাচের তথ্য পাওয়া যায়নি।"
+        
+        # API Response Error Handling
+        if isinstance(res, dict) and "message" in res:
+            return f"⚠️ API Error: {res['message']}"
+            
+        if not isinstance(res, list) or len(res) == 0:
+            return "⚠️ এই মুহূর্তে কোনো লাইভ ম্যাচের তথ্য পাওয়া যায়নি।"
 
         now = datetime.now(timezone.utc)
         twelve_hours_later = now + timedelta(hours=12)
@@ -74,23 +78,20 @@ def fetch_live_matches(sport_key):
         matches_list = []
 
         for match in res:
-            # ISO ফরম্যাট সময় পার্স করা
             commence_time_str = match.get("commence_time")
             if commence_time_str:
                 match_time = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
 
-                # আগামী ১২ ঘণ্টার মধ্যে ম্যাচ কি না তা ফিল্টার করা
+                # আগামী ১২ ঘণ্টার ফিল্টার
                 if now <= match_time <= twelve_hours_later:
                     home_team = match.get("home_team")
                     away_team = match.get("away_team")
                     
-                    # কম রিস্ক বের করার জন্য বুকমেকার ওডস বিশ্লেষণ
                     odds_text = "N/A"
                     safe_tip = f"{home_team} / Draw (Safe 1X)"
                     
                     if match.get("bookmakers"):
                         outcomes = match["bookmakers"][0]["markets"][0]["outcomes"]
-                        # ওডস ফরম্যাটিং
                         odds_text = " | ".join([f"{o['name']}: {o['price']}" for o in outcomes])
 
                     matches_list.append(
@@ -101,13 +102,13 @@ def fetch_live_matches(sport_key):
                     )
 
         if not matches_list:
-            return "⏳ *আগামী ১২ ঘণ্টার মধ্যে কোনো লো-রিস্ক ম্যাচ শিডিউল করা নেই।*"
+            return "⏳ *আগামী ১২ ঘণ্টার মধ্যে কোনো ম্যাচ শিডিউল করা নেই।*"
 
         header = "⚽ *আগামী ১২ ঘণ্টার লাইভ ফুটবল আপডেট*\n───────────────\n\n" if "soccer" in sport_key else "🏏 *আগামী ১২ ঘণ্টার লাইভ ক্রিকেট আপডেট*\n───────────────\n\n"
-        return header + "\n".join(matches_list[:5]) # সেরা ৫টি প্রদর্শন করা হচ্ছে
+        return header + "\n".join(matches_list[:5])
 
-    except Exception as e:
-        return "⚠️ এপিআই থেকে ডেটা ফেচ করতে সমস্যা হয়েছে।"
+    except Exception:
+        return "⚠️ এপিআই সার্ভারে সংযোগ করতে সমস্যা হচ্ছে।"
 
 # ----------------- কিবোর্ড ও ইনলাইন অপশন -----------------
 def get_main_inline_keyboard():
@@ -149,7 +150,7 @@ async def handle_message(update, context):
         await start(update, context)
     elif text == "⚽ আগামী ১২ ঘণ্টার ফুটবল":
         await update.message.reply_text("⏳ লাইভ ডাটা লোড হচ্ছে...", parse_mode='Markdown')
-        msg = fetch_live_matches("soccer_epl") # ডিফল্ট EPL ধরা হলো, প্রয়োজনে soccer_spain_la_liga ইত্যাদি দিতে পারেন
+        msg = fetch_live_matches("soccer_epl")
         await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
     elif text == "🏏 আগামী ১২ ঘণ্টার ক্রিকেট":
         await update.message.reply_text("⏳ লাইভ ডাটা লোড হচ্ছে...", parse_mode='Markdown')
@@ -160,7 +161,7 @@ async def handle_message(update, context):
             "📊 *ব্যাংক রোল ম্যানেজমেন্ট গাইড (Low Risk Rules)*\n───────────────\n"
             "১. **১-৩% রুল:** আপনার মোট বাজেটের সর্বোচ্চ ১ থেকে ৩ শতাংশ প্রতি বেটে রাখবেন।\n"
             "২. **লসের পেছনে দৌড়াবেন না:** হেরে গেলে একবারে রিকভার করার চেষ্টা করবেন না।\n"
-            "৩. **মাল্টি-বেট এড়ান:** অ্যাকুমুলেটর বা বড় মাল্টি বেটে ঝুঁকি বেশি থাকে, সিঙ্গেল সেফ বেট খেলুন।"
+            "৩. **মাল্টি-বেট এড়ান:** সিঙ্গেল সেফ বেট খেলুন।"
         )
         await update.message.reply_text(guide, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
     elif text == "🤖 AI ম্যাচ অ্যানালাইসিস":
@@ -188,6 +189,13 @@ async def button_click(update, context):
         await query.edit_message_text("⏳ ক্রিকেট ম্যাচের লাইভ ডাটা আপডেট হচ্ছে...", parse_mode='Markdown')
         msg = fetch_live_matches("cricket_international")
         await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+    elif query.data == "guide_bankroll":
+        guide = (
+            "📊 *ব্যাংক রোল ম্যানেজমেন্ট গাইড (Low Risk Rules)*\n───────────────\n"
+            "১. **১-৩% রুল:** আপনার মোট বাজেটের সর্বোচ্চ ১ থেকে ৩ শতাংশ প্রতি বেটে রাখবেন।\n"
+            "২. **লসের পেছনে দৌড়াবেন না:** হেরে গেলে একবারে রিকভার করার চেষ্টা করবেন না।"
+        )
+        await query.edit_message_text(guide, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
     elif query.data == "ai_predict":
         user_state[user_id] = "WAITING_FOR_MATCH_NAME"
         await query.edit_message_text("🧠 *AI প্রস্তুত!* যেকোনো ম্যাচের নাম লিখে বার্তা পাঠান:", parse_mode='Markdown')
@@ -212,4 +220,3 @@ if __name__ == "__main__":
         
         print("Sports Betting Tips Bot চালু হয়েছে...")
         application.run_polling()
-                                          
