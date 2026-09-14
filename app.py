@@ -1,204 +1,194 @@
 import os
-import requests
+import asyncio
 import random
 import threading
-from datetime import datetime, timedelta, timezone
 from flask import Flask
-from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from playwright.async_api import async_playwright
 from werkzeug.serving import make_server
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Sports Betting Tips Bot with Live API is Running!"
+    return "Ultra-Stealth Traffic Bot is Running!"
 
 @app.route('/health')
 def health():
     return "OK"
 
-# ----------------- কনফিগারেশন -----------------
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+# ----------------- রিয়েল ট্রাফিকের অ্যান্টি-ডিটেকশন কনফিগারেশন -----------------
 
-# Railway Variable নাম নিরাপদ রাখার জন্য
-ODDS_API_KEY = os.getenv("ODDS_API_KEY") or os.getenv("odds_api_key")
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.80 Mobile Safari/537.36"
+]
 
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-VIP_LINK = os.getenv("SPONSOR_LINK", "https://t.me/telegram")
+REFERRERS = [
+    "https://www.google.com/",
+    "https://www.bing.com/",
+    "https://t.co/",
+    "https://www.facebook.com/",
+    "https://duckduckgo.com/"
+]
 
-ai_client = genai.Client(api_key=GEMINI_KEY) if GEMINI_KEY else None
-USER_IDS = set()
+user_data = {}
 
-def register_user(user_id):
-    USER_IDS.add(user_id)
+# ----------------- ট্রাফিক সিমুলেটর লজিক -----------------
 
-def ask_ai_prediction(match_info):
-    if not ai_client:
-        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি। GEMINI_API_KEY দিন।"
-    try:
-        sys_instruction = (
-            "You are a cautious sports analyst. Provide safe, low-risk betting predictions "
-            "with double chance or safe handicap options. Answer in concise Bengali."
-        )
-        response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"Analyze this match and give low risk tips: {match_info}",
-            config={'system_instruction': sys_instruction}
-        )
-        return response.text
-    except Exception:
-        return "⚠️ AI অ্যানালাইসিস করতে সমস্যা হচ্ছে।"
-
-# ----------------- লাইভ API ডাটা (আগামী ১২ ঘণ্টা) -----------------
-
-def fetch_live_matches(sport_key):
-    # API Key পুনরায় চেক
-    api_key = os.getenv("ODDS_API_KEY") or os.getenv("odds_api_key")
+async def simulate_traffic(url, chat_id, context, total_runs):
+    await context.bot.send_message(
+        chat_id=chat_id, 
+        text=f"🚀 *Traffic Test Started!*\n🔗 **URL:** `{url}`\n📊 **Target Visits:** `{total_runs}`\n🛡️ **Stealth Mode:** Enabled",
+        parse_mode='Markdown'
+    )
     
-    if not api_key:
-        return "⚠️ `ODDS_API_KEY` সেট করা হয়নি! Railway থেকে অ্যাপটি 'Redeploy' দিন।"
+    success_count = 0
+    fail_count = 0
 
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={api_key.strip()}&regions=eu&markets=h2h"
-    
-    try:
-        res = requests.get(url, timeout=10).json()
-        
-        # API Response Error Handling
-        if isinstance(res, dict) and "message" in res:
-            return f"⚠️ API Error: {res['message']}"
-            
-        if not isinstance(res, list) or len(res) == 0:
-            return "⚠️ এই মুহূর্তে কোনো লাইভ ম্যাচের তথ্য পাওয়া যায়নি।"
+    async with async_playwright() as p:
+        for i in range(1, total_runs + 1):
+            try:
+                # ব্রাউজার লঞ্চিং উইথ অ্যান্টি-বোট ফ্ল্যাগ
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-infobars'
+                    ]
+                )
+                
+                # অর্গানিক ট্রাফিক হেডারের মতো সাজানো
+                selected_ua = random.choice(USER_AGENTS)
+                is_mobile = "Mobile" in selected_ua or "iPhone" in selected_ua
 
-        now = datetime.now(timezone.utc)
-        twelve_hours_later = now + timedelta(hours=12)
+                context_browser = await browser.new_context(
+                    user_agent=selected_ua,
+                    viewport={'width': 390 if is_mobile else random.choice([1366, 1920, 1440]), 
+                              'height': 844 if is_mobile else random.choice([768, 1080, 900])},
+                    is_mobile=is_mobile,
+                    has_touch=is_mobile,
+                    extra_http_headers={"Referer": random.choice(REFERRERS)}
+                )
+                
+                page = await context_browser.new_page()
 
-        matches_list = []
+                # Anti-Bot Evasion JavaScript Injections
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    window.chrome = { runtime: {} };
+                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+                """)
 
-        for match in res:
-            commence_time_str = match.get("commence_time")
-            if commence_time_str:
-                match_time = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
-
-                # আগামী ১২ ঘণ্টার ফিল্টার
-                if now <= match_time <= twelve_hours_later:
-                    home_team = match.get("home_team")
-                    away_team = match.get("away_team")
+                # ওয়েবসাইটে প্রবেশ
+                await page.goto(url, timeout=35000, wait_until="domcontentloaded")
+                
+                # ১০ সেকেন্ড হিউম্যানাইজড অ্যাক্টিভিটি (র্যান্ডম স্ক্রোল ও মাউস মুভমেন্ট)
+                start_time = asyncio.get_event_loop().time()
+                while asyncio.get_event_loop().time() - start_time < 10:
+                    # মাউস জিটার (মানুষের মতো মাউস নাড়ানো)
+                    if not is_mobile:
+                        await page.mouse.move(random.randint(100, 500), random.randint(100, 500))
                     
-                    odds_text = "N/A"
-                    safe_tip = f"{home_team} / Draw (Safe 1X)"
-                    
-                    if match.get("bookmakers"):
-                        outcomes = match["bookmakers"][0]["markets"][0]["outcomes"]
-                        odds_text = " | ".join([f"{o['name']}: {o['price']}" for o in outcomes])
+                    # মানুষের মতো স্ক্রোল করা
+                    scroll_y = random.randint(200, 500)
+                    await page.mouse.wheel(0, scroll_y)
+                    await asyncio.sleep(random.uniform(1.5, 3.2)) # পজ
 
-                    matches_list.append(
-                        f"⚔️ *{home_team} vs {away_team}*\n"
-                        f"⏰ *কিক অফ (UTC):* `{match_time.strftime('%H:%M, %d %b')}`\n"
-                        f"🎯 *Low Risk Tip:* `{safe_tip}`\n"
-                        f"📊 *Live Odds:* `{odds_text}`\n"
+                await browser.close()
+                success_count += 1
+
+                # প্রতি ৫টি বা শেষ ভিজিটে স্ট্যাটাস আপডেট
+                if i % 5 == 0 or i == total_runs:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🔄 *Progress:* `{i}/{total_runs}` visits completed.\n🟢 Success: {success_count} | 🔴 Stuck/Failed: {fail_count}",
+                        parse_mode='Markdown'
                     )
 
-        if not matches_list:
-            return "⏳ *আগামী ১২ ঘণ্টার মধ্যে কোনো ম্যাচ শিডিউল করা নেই।*"
+                # ৫ সেকেন্ড বিরতি (র্যান্ডমাইজড)
+                await asyncio.sleep(random.uniform(4.5, 6.5))
 
-        header = "⚽ *আগামী ১২ ঘণ্টার লাইভ ফুটবল আপডেট*\n───────────────\n\n" if "soccer" in sport_key else "🏏 *আগামী ১২ ঘণ্টার লাইভ ক্রিকেট আপডেট*\n───────────────\n\n"
-        return header + "\n".join(matches_list[:5])
+            except Exception as e:
+                fail_count += 1
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⚠️ *Visit #{i} Stuck/Failed!* Retrying next...\nError: `{str(e)[:40]}`",
+                    parse_mode='Markdown'
+                )
+                await asyncio.sleep(3)
 
-    except Exception:
-        return "⚠️ এপিআই সার্ভারে সংযোগ করতে সমস্যা হচ্ছে।"
+    # কাজ শেষে ফাইনাল মেসেজ
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"✅ *Traffic Test Completed!*\n\n🎯 **Total Target:** {total_runs}\n🟢 **Success:** {success_count}\n🔴 **Failed/Stuck:** {fail_count}",
+        parse_mode='Markdown'
+    )
 
-# ----------------- কিবোর্ড ও ইনলাইন অপশন -----------------
-def get_main_inline_keyboard():
+# ----------------- কিবোর্ড ও ইনলাইন মেনু -----------------
+
+def get_count_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚽ ফুটবল (১২ ঘণ্টা)", callback_data="tips_football"), InlineKeyboardButton("🏏 ক্রিকেট (১২ ঘণ্টা)", callback_data="tips_cricket")],
-        [InlineKeyboardButton("📊 ব্যাংক রোল গাইড", callback_data="guide_bankroll"), InlineKeyboardButton("🤖 AI ম্যাচ অ্যানালাইজার", callback_data="ai_predict")],
-        [InlineKeyboardButton("🔥 VIP / স্পেশাল অফার 📢", url=VIP_LINK)]
+        [InlineKeyboardButton("30 Visits", callback_data="count_30"), InlineKeyboardButton("50 Visits", callback_data="count_50")],
+        [InlineKeyboardButton("100 Visits", callback_data="count_100")]
     ])
 
-def get_reply_keyboard():
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("⚽ আগামী ১২ ঘণ্টার ফুটবল"), KeyboardButton("🏏 আগামী ১২ ঘণ্টার ক্রিকেট")],
-        [KeyboardButton("📊 ব্যাংক রোল গাইড"), KeyboardButton("🤖 AI ম্যাচ অ্যানালাইসিস")],
-        [KeyboardButton("🏠 মূল মেনু")]
-    ], resize_keyboard=True)
-
-# ----------------- হ্যান্ডলারস -----------------
-user_state = {}
+# ----------------- টেলিগ্রাম হ্যান্ডলারস -----------------
 
 async def start(update, context):
-    user_id = update.message.from_user.id
-    register_user(user_id)
-    
     welcome = (
-        "🎯 *Safe Bet Pro - Low Risk Betting Tips Bot!*\n\n"
-        "এখানে আগামী **১২ ঘণ্টার** মধ্যে হতে যাওয়া ক্রিকেট ও ফুটবলের লাইভ ম্যাচ ফিল্টার করে সেরা **Low Risk** টিপস দেওয়া হয়।\n\n"
-        "👇 নিচের মেনু থেকে বেছে নিন:"
+        "🤖 *Real Human-Like Traffic Bot*\n\n"
+        "এই বটের সাহায্যে আপনি অ্যান্টি-ডিটেকশন মোডে ওয়েবসাইটের ট্রাফিক টেস্ট করতে পারবেন।\n\n"
+        "👇 শুরু করতে নিচে **🚀 Start Traffic Test** এ ক্লিক করুন।"
     )
-    await update.message.reply_text("স্মার্ট মেনু চালু হয়েছে।", reply_markup=get_reply_keyboard())
-    await update.message.reply_text(welcome, reply_markup=get_main_inline_keyboard(), parse_mode='Markdown')
+    keyboard = ReplyKeyboardMarkup([[KeyboardButton("🚀 Start Traffic Test")]], resize_keyboard=True)
+    await update.message.reply_text(welcome, reply_markup=keyboard, parse_mode='Markdown')
 
 async def handle_message(update, context):
     user_id = update.message.from_user.id
-    register_user(user_id)
     text = update.message.text
 
-    if text == "🏠 মূল মেনু":
-        user_state[user_id] = None
-        await start(update, context)
-    elif text == "⚽ আগামী ১২ ঘণ্টার ফুটবল":
-        await update.message.reply_text("⏳ লাইভ ডাটা লোড হচ্ছে...", parse_mode='Markdown')
-        msg = fetch_live_matches("soccer_epl")
-        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "🏏 আগামী ১২ ঘণ্টার ক্রিকেট":
-        await update.message.reply_text("⏳ লাইভ ডাটা লোড হচ্ছে...", parse_mode='Markdown')
-        msg = fetch_live_matches("cricket_international")
-        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "📊 ব্যাংক রোল গাইড":
-        guide = (
-            "📊 *ব্যাংক রোল ম্যানেজমেন্ট গাইড (Low Risk Rules)*\n───────────────\n"
-            "১. **১-৩% রুল:** আপনার মোট বাজেটের সর্বোচ্চ ১ থেকে ৩ শতাংশ প্রতি বেটে রাখবেন।\n"
-            "২. **লসের পেছনে দৌড়াবেন না:** হেরে গেলে একবারে রিকভার করার চেষ্টা করবেন না।\n"
-            "৩. **মাল্টি-বেট এড়ান:** সিঙ্গেল সেফ বেট খেলুন।"
-        )
-        await update.message.reply_text(guide, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "🤖 AI ম্যাচ অ্যানালাইসিস":
-        user_state[user_id] = "WAITING_FOR_MATCH_NAME"
-        await update.message.reply_text("🧠 *AI প্রস্তুত!* যেকোনো ম্যাচের নাম লিখে পাঠান (যেমন: *Real Madrid vs Barcelona*):", parse_mode='Markdown')
-    elif user_state.get(user_id) == "WAITING_FOR_MATCH_NAME":
-        user_state[user_id] = None
-        await update.message.reply_text("⏳ *AI দিয়ে সেফ অ্যানালাইসিস তৈরি হচ্ছে...*", parse_mode='Markdown')
-        ai_response = ask_ai_prediction(text)
-        await update.message.reply_text(f"🤖 *AI Analysis & Safe Tip:*\n\n{ai_response}", reply_markup=get_main_inline_keyboard())
-    else:
-        await update.message.reply_text("দয়া করে নিচের মেনু থেকে একটি বাটন নির্বাচন করুন।", reply_markup=get_reply_keyboard())
+    if text == "🚀 Start Traffic Test":
+        user_data[user_id] = {"state": "WAITING_FOR_URL"}
+        await update.message.reply_text("🔗 **দয়া করে আপনার ওয়েবসাইটের লিংক (URL) পাঠান:**\n\n*(উদাহরণ: `https://example.com`)*", parse_mode='Markdown')
+        
+    elif user_data.get(user_id, {}).get("state") == "WAITING_FOR_URL":
+        if text.startswith("http://") or text.startswith("https://"):
+            user_data[user_id]["url"] = text
+            user_data[user_id]["state"] = "WAITING_FOR_COUNT"
+            await update.message.reply_text("📊 **কতবার ভিজিট করাতে চান?**\n\nনিচের বাটন থেকে নির্বাচন করুন অথবা সংখ্যাটি ম্যানুয়ালি লিখে পাঠান:", reply_markup=get_count_keyboard(), parse_mode='Markdown')
+        else:
+            await update.message.reply_text("⚠️ **অবৈধ লিংক!** সঠিক URL দিন (http:// বা https:// সহ)।")
+            
+    elif user_data.get(user_id, {}).get("state") == "WAITING_FOR_COUNT":
+        if text.isdigit() and int(text) > 0:
+            url = user_data[user_id]["url"]
+            count = int(text)
+            user_data[user_id] = None
+            asyncio.create_task(simulate_traffic(url, update.message.chat_id, context, total_runs=count))
+        else:
+            await update.message.reply_text("⚠️ **অবৈধ সংখ্যা!** কেবল সঠিক সংখ্যা লিখে পাঠান (যেমন: 20, 50, 100)।")
 
 async def button_click(update, context):
     query = update.callback_query
     user_id = query.from_user.id
-    register_user(user_id)
     await query.answer()
 
-    if query.data == "tips_football":
-        await query.edit_message_text("⏳ ফুটবল ম্যাচের লাইভ ডাটা আপডেট হচ্ছে...", parse_mode='Markdown')
-        msg = fetch_live_matches("soccer_epl")
-        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif query.data == "tips_cricket":
-        await query.edit_message_text("⏳ ক্রিকেট ম্যাচের লাইভ ডাটা আপডেট হচ্ছে...", parse_mode='Markdown')
-        msg = fetch_live_matches("cricket_international")
-        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif query.data == "guide_bankroll":
-        guide = (
-            "📊 *ব্যাংক রোল ম্যানেজমেন্ট গাইড (Low Risk Rules)*\n───────────────\n"
-            "১. **১-৩% রুল:** আপনার মোট বাজেটের সর্বোচ্চ ১ থেকে ৩ শতাংশ প্রতি বেটে রাখবেন।\n"
-            "২. **লসের পেছনে দৌড়াবেন না:** হেরে গেলে একবারে রিকভার করার চেষ্টা করবেন না।"
-        )
-        await query.edit_message_text(guide, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif query.data == "ai_predict":
-        user_state[user_id] = "WAITING_FOR_MATCH_NAME"
-        await query.edit_message_text("🧠 *AI প্রস্তুত!* যেকোনো ম্যাচের নাম লিখে বার্তা পাঠান:", parse_mode='Markdown')
+    if query.data.startswith("count_"):
+        count = int(query.data.split("_")[1])
+        if user_data.get(user_id, {}).get("url"):
+            url = user_data[user_id]["url"]
+            user_data[user_id] = None
+            await query.edit_message_text(f"✅ **{count} Visits Selected.** Process Starting...", parse_mode='Markdown')
+            asyncio.create_task(simulate_traffic(url, query.message.chat_id, context, total_runs=count))
+        else:
+            await query.edit_message_text("⚠️ **সেশন এক্সপায়ার হয়েছে!** নতুন করে `/start` দিন।")
 
 # ----------------- সার্ভার রানার -----------------
 def run_flask():
@@ -209,7 +199,7 @@ def run_flask():
 if __name__ == "__main__":
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
-        print("Error: TELEGRAM_TOKEN পাওয়া যায়নি!")
+        print("Error: TELEGRAM_TOKEN পাওয়া যায়নি!")
     else:
         threading.Thread(target=run_flask, daemon=True).start()
         
@@ -218,5 +208,5 @@ if __name__ == "__main__":
         application.add_handler(CallbackQueryHandler(button_click))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
-        print("Sports Betting Tips Bot চালু হয়েছে...")
+        print("Traffic Bot চালু হয়েছে...")
         application.run_polling()
