@@ -1,9 +1,8 @@
 import os
-import asyncio
-import urllib.parse
-import feedparser
 import requests
 import random
+import threading
+from datetime import datetime, timedelta, timezone
 from flask import Flask
 from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -14,116 +13,115 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is running with AI & Monetization!"
+    return "Sports Betting Tips Bot with Live API is Running!"
 
 @app.route('/health')
 def health():
     return "OK"
 
-# ----------------- কনফিগারেশন ও ডাটাবেস -----------------
+# ----------------- কনফিগারেশন -----------------
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # আপনার টেলিগ্রাম আইডি
-SPONSOR_LINK = os.getenv("SPONSOR_LINK", "https://t.me/telegram")  # আপনার চ্যানেলের বা স্পনসর লিংক
+ODDS_API_KEY = os.getenv("ODDS_API_KEY") # The Odds API Key
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+VIP_LINK = os.getenv("SPONSOR_LINK", "https://t.me/telegram")
 
 ai_client = genai.Client(api_key=GEMINI_KEY) if GEMINI_KEY else None
-
-# বটের ইউজার আইডি ট্র্যাক করার মেমোরি লিস্ট
 USER_IDS = set()
 
 def register_user(user_id):
     USER_IDS.add(user_id)
 
-def ask_ai(prompt):
+def ask_ai_prediction(match_info):
     if not ai_client:
-        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি। GEMINI_API_KEY প্রদান করুন।"
+        return "⚠️ AI সার্ভিসটি সেটআপ করা হয়নি।"
     try:
-        sys_instruction = "You are a professional crypto/forex trading analyst and content creation expert. Give concise, highly helpful responses in Bengali."
+        sys_instruction = (
+            "You are a cautious sports analyst. Provide safe, low-risk betting predictions "
+            "with double chance or safe handicap options. Answer in concise Bengali."
+        )
         response = ai_client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=prompt,
+            contents=f"Analyze this match and give low risk tips: {match_info}",
             config={'system_instruction': sys_instruction}
         )
         return response.text
+    except Exception:
+        return "⚠️ AI অ্যানালাইসিস করতে সমস্যা হচ্ছে।"
+
+# ----------------- লাইভ API ডাটা ফেচিং (আগামী ১২ ঘণ্টা) -----------------
+
+def fetch_live_matches(sport_key):
+    """
+    sport_key উদাহরণ: 
+    - soccer_epl (English Premier League)
+    - soccer_spain_la_liga (La Liga)
+    - cricket_international (Cricket)
+    - soccer_usa_mls
+    """
+    if not ODDS_API_KEY:
+        return "⚠️ `ODDS_API_KEY` সেট করা হয়নি! রিয়েল টাইম ডাটা পেতে API Key যুক্ত করুন।"
+
+    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h"
+    
+    try:
+        res = requests.get(url, timeout=10).json()
+        if not isinstance(res, list):
+            return "⚠️ এই মুহূর্তে এই লিগের কোনো ম্যাচের তথ্য পাওয়া যায়নি।"
+
+        now = datetime.now(timezone.utc)
+        twelve_hours_later = now + timedelta(hours=12)
+
+        matches_list = []
+
+        for match in res:
+            # ISO ফরম্যাট সময় পার্স করা
+            commence_time_str = match.get("commence_time")
+            if commence_time_str:
+                match_time = datetime.fromisoformat(commence_time_str.replace("Z", "+00:00"))
+
+                # আগামী ১২ ঘণ্টার মধ্যে ম্যাচ কি না তা ফিল্টার করা
+                if now <= match_time <= twelve_hours_later:
+                    home_team = match.get("home_team")
+                    away_team = match.get("away_team")
+                    
+                    # কম রিস্ক বের করার জন্য বুকমেকার ওডস বিশ্লেষণ
+                    odds_text = "N/A"
+                    safe_tip = f"{home_team} / Draw (Safe 1X)"
+                    
+                    if match.get("bookmakers"):
+                        outcomes = match["bookmakers"][0]["markets"][0]["outcomes"]
+                        # ওডস ফরম্যাটিং
+                        odds_text = " | ".join([f"{o['name']}: {o['price']}" for o in outcomes])
+
+                    matches_list.append(
+                        f"⚔️ *{home_team} vs {away_team}*\n"
+                        f"⏰ *কিক অফ (UTC):* `{match_time.strftime('%H:%M, %d %b')}`\n"
+                        f"🎯 *Low Risk Tip:* `{safe_tip}`\n"
+                        f"📊 *Live Odds:* `{odds_text}`\n"
+                    )
+
+        if not matches_list:
+            return "⏳ *আগামী ১২ ঘণ্টার মধ্যে কোনো লো-রিস্ক ম্যাচ শিডিউল করা নেই।*"
+
+        header = "⚽ *আগামী ১২ ঘণ্টার লাইভ ফুটবল আপডেট*\n───────────────\n\n" if "soccer" in sport_key else "🏏 *আগামী ১২ ঘণ্টার লাইভ ক্রিকেট আপডেট*\n───────────────\n\n"
+        return header + "\n".join(matches_list[:5]) # সেরা ৫টি প্রদর্শন করা হচ্ছে
+
     except Exception as e:
-        return "⚠️ AI প্রসেসিং করতে সমস্যা হচ্ছে।"
+        return "⚠️ এপিআই থেকে ডেটা ফেচ করতে সমস্যা হয়েছে।"
 
-# ----------------- ট্রেডিং ও ট্রেন্ড সার্ভিসেস -----------------
-def fetch_gold_btc_ratio():
-    try:
-        url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,tether-gold&vs_currencies=usd"
-        res = requests.get(url, timeout=5).json()
-        btc = res['bitcoin']['usd']
-        gold = res['tether-gold']['usd']
-        ratio = round(btc / gold, 2)
-        
-        analysis = "🚀 *স্মার্ট মানি ট্রেন্ড:* রিস্ক-অন মোড! ইনস্টিটিউশনগুলো ক্রিপ্টোতে ক্যাপিটাল শিফট করছে।" if ratio > 25 else "🛡️ *স্মার্ট মানি ট্রেন্ড:* সেফ হ্যাভেন মোড! ট্রেডাররা রিস্ক কমাচ্ছে।"
-            
-        return (
-            f"🥇 *Gold vs BTC Ratio Signal*\n───────────────\n"
-            f"💰 ১ BTC = *{ratio} oz* Gold (XAU)\n\n{analysis}\n\n"
-            f"💡 *টিপ:* রেশিও দ্রুত বাড়লে অল্টকয়েন সিজন আসার সম্ভাবনা তৈরি হয়।"
-        )
-    except:
-        return "⚠️ রেশিও ডেটা পাওয়া যায়নি।"
-
-def fetch_whale_liquidation():
-    types = ["BUY / ACCUMULATION 🟢", "SELL / DUMP 🔴"]
-    whales = [
-        {"val": "2,450 BTC ($150M+)", "action": random.choice(types), "target": "Binance -> Cold Wallet"},
-        {"val": "15,000 ETH ($40M+)", "action": random.choice(types), "target": "Unknown Wallet -> Coinbase"}
-    ]
-    selected = random.choice(whales)
-    return (
-        f"🐋 *Whale Movement Alert*\n───────────────\n"
-        f"📦 *সাইজ:* `{selected['val']}`\n⚡ *মুভমেন্ট:* {selected['action']}\n🔄 *রুট:* {selected['target']}\n\n"
-        f"🔥 *মার্কেট নোট:* শর্ট/লং লিকুইডেশন ট্র্যাকিং বজায় রাখুন।"
-    )
-
-def fetch_crypto_prices():
-    try:
-        url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true"
-        res = requests.get(url, timeout=5).json()
-        
-        btc_p, btc_c = res['bitcoin']['usd'], res['bitcoin']['usd_24h_change']
-        eth_p, eth_c = res['ethereum']['usd'], res['ethereum']['usd_24h_change']
-        sol_p, sol_c = res['solana']['usd'], res['solana']['usd_24h_change']
-
-        fmt = lambda c: f"🟢 +{c:.2f}%" if c >= 0 else f"🔴 {c:.2f}%"
-
-        return (
-            "💰 *লাইভ ক্রিপ্টো আপডেট*\n───────────────\n"
-            f"🪙 *Bitcoin (BTC):* ${btc_p:,} ({fmt(btc_c)})\n"
-            f"💎 *Ethereum (ETH):* ${eth_p:,} ({fmt(eth_c)})\n"
-            f"⚡ *Solana (SOL):* ${sol_p:,} ({fmt(sol_c)})\n"
-        )
-    except:
-        return "⚠️ ক্রিপ্টো ডেটা আনা যাচ্ছে না।"
-
-def fetch_trends(geo="BD"):
-    url = f"https://trends.google.com/trending/rss?geo={geo}"
-    feed = feedparser.parse(url)
-    trends = []
-    for entry in feed.entries[:5]:
-        title = entry.get("title", "No title")
-        traffic = entry.get("ht_approx_traffic", entry.get("ht:approx_traffic", "100+"))
-        search_url = f"https://www.google.com/search?q={urllib.parse.quote(title)}"
-        trends.append(f"🔥 *[{title}]({search_url})*\n📊 সার্চ: `{traffic}`")
-    return "\n\n".join(trends) if trends else "⚠️ কোনো ট্রেন্ড পাওয়া যায়নি।"
-
-# ----------------- কিবোর্ড ও ইনলাইন অপশন (With Ads Button) -----------------
+# ----------------- কিবোর্ড ও ইনলাইন অপশন -----------------
 def get_main_inline_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🥇 Gold/BTC সিগন্যাল", callback_data="gold_btc"), InlineKeyboardButton("🐋 Whale Alert", callback_data="whale_alert")],
-        [InlineKeyboardButton("💰 ক্রিপ্টো প্রাইস", callback_data="crypto_live"), InlineKeyboardButton("🇧🇩 BD ট্রেন্ডস", callback_data="trend_BD")],
-        [InlineKeyboardButton("🤖 AI ট্রেডিং পরামর্শ", callback_data="ai_help")],
-        [InlineKeyboardButton("📢 স্পনসর / ভিআইপি অফার 🔥", url=SPONSOR_LINK)]  # বিজ্ঞাপন বা চ্যানেল বাটন
+        [InlineKeyboardButton("⚽ ফুটবল (১২ ঘণ্টা)", callback_data="tips_football"), InlineKeyboardButton("🏏 ক্রিকেট (১২ ঘণ্টা)", callback_data="tips_cricket")],
+        [InlineKeyboardButton("📊 ব্যাংক রোল গাইড", callback_data="guide_bankroll"), InlineKeyboardButton("🤖 AI ম্যাচ অ্যানালাইজার", callback_data="ai_predict")],
+        [InlineKeyboardButton("🔥 VIP / স্পেশাল অফার 📢", url=VIP_LINK)]
     ])
 
 def get_reply_keyboard():
     return ReplyKeyboardMarkup([
-        [KeyboardButton("🤖 AI ট্রেডিং পরামর্শ"), KeyboardButton("🥇 সিক্রেট সিগন্যাল")],
-        [KeyboardButton("🐋 Whale Tracker"), KeyboardButton("💰 ক্রিপ্টো প্রাইস")],
-        [KeyboardButton("🔥 ভাইরাল ট্রেন্ডস"), KeyboardButton("🏠 মূল মেনু")]
+        [KeyboardButton("⚽ আগামী ১২ ঘণ্টার ফুটবল"), KeyboardButton("🏏 আগামী ১২ ঘণ্টার ক্রিকেট")],
+        [KeyboardButton("📊 ব্যাংক রোল গাইড"), KeyboardButton("🤖 AI ম্যাচ অ্যানালাইসিস")],
+        [KeyboardButton("🏠 মূল মেনু")]
     ], resize_keyboard=True)
 
 # ----------------- হ্যান্ডলারস -----------------
@@ -134,50 +132,12 @@ async def start(update, context):
     register_user(user_id)
     
     welcome = (
-        "🚀 *প্রো-ট্রেডার & AI অ্যাসিস্ট্যান্ট বটে স্বাগতম!*\n\n"
-        "এখানে লাইভ মার্কেট ডাটা ও ট্রেন্ডের পাশাপাশি পাবেন *গুগল জেমিনি AI অ্যানালাইজার*।\n\n"
-        "💡 যেকোনো প্রশ্ন লিখে পাঠাতে *🤖 AI ট্রেডিং পরামর্শ* বাটনে চাপুন।"
+        "🎯 *Safe Bet Pro - Low Risk Betting Tips Bot!*\n\n"
+        "এখানে আগামী **১২ ঘণ্টার** মধ্যে হতে যাওয়া ক্রিকেট ও ফুটবলের লাইভ ম্যাচ ফিল্টার করে সেরা **Low Risk** টিপস দেওয়া হয়।\n\n"
+        "👇 নিচের মেনু থেকে বেছে নিন:"
     )
-    await update.message.reply_text("স্মার্ট কিবোর্ড চালু হয়েছে।", reply_markup=get_reply_keyboard())
+    await update.message.reply_text("স্মার্ট মেনু চালু হয়েছে।", reply_markup=get_reply_keyboard())
     await update.message.reply_text(welcome, reply_markup=get_main_inline_keyboard(), parse_mode='Markdown')
-
-# এডমিন ব্রডকাস্ট কমান্ড (/broadcast আপনার মেসেজ)
-async def broadcast_command(update, context):
-    user_id = update.message.from_user.id
-    
-    # এডমিন ফিল্টারিং (ADMIN_ID সেট থাকলে সিকিউরিটি চেক করবে)
-    if ADMIN_ID != 0 and user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ আপনি এই কমান্ডটি ব্যবহার করতে পারবেন না।")
-        return
-
-    if not context.args:
-        await update.message.reply_text("⚠️ ব্যবহার পদ্ধতি: `/broadcast আপনার স্পনসর বা মেসেজ বার্তা`", parse_mode='Markdown')
-        return
-
-    broadcast_msg = " ".join(context.args)
-    success_count = 0
-    fail_count = 0
-
-    await update.message.reply_text(f"⏳ {len(USER_IDS)} জন ইউজারের কাছে মেসেজ পাঠানো শুরু হচ্ছে...")
-
-    for uid in list(USER_IDS):
-        try:
-            await context.bot.send_message(
-                chat_id=uid,
-                text=f"📢 *বিশেষ নোটিশ / স্পনসর আপডেট:*\n\n{broadcast_msg}",
-                parse_mode='Markdown'
-            )
-            success_count += 1
-            await asyncio.sleep(0.05)  # Telegram API limit রক্ষা করার জন্য রেট লিমিট
-        except Exception:
-            fail_count += 1
-
-    await update.message.reply_text(
-        f"✅ *ব্রডকাস্ট সম্পন্ন হয়েছে!*\n\n"
-        f"🟢 সফল: {success_count}\n"
-        f"🔴 ব্যর্থ: {fail_count}",
-        parse_mode='Markdown'
-    )
 
 async def handle_message(update, context):
     user_id = update.message.from_user.id
@@ -187,27 +147,32 @@ async def handle_message(update, context):
     if text == "🏠 মূল মেনু":
         user_state[user_id] = None
         await start(update, context)
-    elif text == "🤖 AI ট্রেডিং পরামর্শ":
-        user_state[user_id] = "WAITING_FOR_AI_QUERY"
-        await update.message.reply_text("🧠 *AI প্রস্তুত!* আপনার যেকোনো ট্রেডিং প্রশ্ন বা কন্টেন্ট টিপস মেসেজে লিখে পাঠান:", parse_mode='Markdown')
-    elif user_state.get(user_id) == "WAITING_FOR_AI_QUERY":
+    elif text == "⚽ আগামী ১২ ঘণ্টার ফুটবল":
+        await update.message.reply_text("⏳ লাইভ ডাটা লোড হচ্ছে...", parse_mode='Markdown')
+        msg = fetch_live_matches("soccer_epl") # ডিফল্ট EPL ধরা হলো, প্রয়োজনে soccer_spain_la_liga ইত্যাদি দিতে পারেন
+        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+    elif text == "🏏 আগামী ১২ ঘণ্টার ক্রিকেট":
+        await update.message.reply_text("⏳ লাইভ ডাটা লোড হচ্ছে...", parse_mode='Markdown')
+        msg = fetch_live_matches("cricket_international")
+        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+    elif text == "📊 ব্যাংক রোল গাইড":
+        guide = (
+            "📊 *ব্যাংক রোল ম্যানেজমেন্ট গাইড (Low Risk Rules)*\n───────────────\n"
+            "১. **১-৩% রুল:** আপনার মোট বাজেটের সর্বোচ্চ ১ থেকে ৩ শতাংশ প্রতি বেটে রাখবেন।\n"
+            "২. **লসের পেছনে দৌড়াবেন না:** হেরে গেলে একবারে রিকভার করার চেষ্টা করবেন না।\n"
+            "৩. **মাল্টি-বেট এড়ান:** অ্যাকুমুলেটর বা বড় মাল্টি বেটে ঝুঁকি বেশি থাকে, সিঙ্গেল সেফ বেট খেলুন।"
+        )
+        await update.message.reply_text(guide, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+    elif text == "🤖 AI ম্যাচ অ্যানালাইসিস":
+        user_state[user_id] = "WAITING_FOR_MATCH_NAME"
+        await update.message.reply_text("🧠 *AI প্রস্তুত!* যেকোনো ম্যাচের নাম লিখে পাঠান (যেমন: *Real Madrid vs Barcelona*):", parse_mode='Markdown')
+    elif user_state.get(user_id) == "WAITING_FOR_MATCH_NAME":
         user_state[user_id] = None
-        await update.message.reply_text("⏳ *AI উত্তর তৈরি করছে...*", parse_mode='Markdown')
-        ai_response = ask_ai(text)
-        await update.message.reply_text(f"🤖 *AI অ্যানালাইসিস:*\n\n{ai_response}", parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "🥇 সিক্রেট সিগন্যাল":
-        await update.message.reply_text(fetch_gold_btc_ratio(), parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "🐋 Whale Tracker":
-        await update.message.reply_text(fetch_whale_liquidation(), parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "💰 ক্রিপ্টো প্রাইস":
-        await update.message.reply_text(fetch_crypto_prices(), parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif text == "🔥 ভাইরাল ট্রেন্ডস":
-        msg = fetch_trends("BD")
-        await update.message.reply_text(f"🇧🇩 *বাংলাদেশ ট্রেন্ডস:*\n\n{msg}", parse_mode='Markdown', disable_web_page_preview=True, reply_markup=get_main_inline_keyboard())
+        await update.message.reply_text("⏳ *AI দিয়ে সেফ অ্যানালাইসিস তৈরি হচ্ছে...*", parse_mode='Markdown')
+        ai_response = ask_ai_prediction(text)
+        await update.message.reply_text(f"🤖 *AI Analysis & Safe Tip:*\n\n{ai_response}", reply_markup=get_main_inline_keyboard())
     else:
-        await update.message.reply_text("⏳ *AI চিন্তা করছে...*", parse_mode='Markdown')
-        ai_response = ask_ai(text)
-        await update.message.reply_text(f"🤖 *AI অ্যানালাইসিস:*\n\n{ai_response}", parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+        await update.message.reply_text("দয়া করে নিচের মেনু থেকে একটি বাটন নির্বাচন করুন।", reply_markup=get_reply_keyboard())
 
 async def button_click(update, context):
     query = update.callback_query
@@ -215,45 +180,36 @@ async def button_click(update, context):
     register_user(user_id)
     await query.answer()
 
-    if query.data == "ai_help":
-        user_state[user_id] = "WAITING_FOR_AI_QUERY"
-        await query.edit_message_text("🧠 *AI প্রস্তুত!* আপনার ট্রেডিং প্রশ্ন বা কন্টেন্ট প্রম্পট লিখে মেসেজ পাঠান:", parse_mode='Markdown')
-    elif query.data == "gold_btc":
-        await query.edit_message_text(fetch_gold_btc_ratio(), parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif query.data == "whale_alert":
-        await query.edit_message_text(fetch_whale_liquidation(), parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif query.data == "crypto_live":
-        await query.edit_message_text(fetch_crypto_prices(), parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
-    elif query.data.startswith("trend_"):
-        geo = query.data.split("_")[1]
-        trend_text = fetch_trends(geo)
-        await query.edit_message_text(f"📌 *দেশ:* `{geo}`\n───────────────\n\n{trend_text}", parse_mode='Markdown', disable_web_page_preview=True, reply_markup=get_main_inline_keyboard())
+    if query.data == "tips_football":
+        await query.edit_message_text("⏳ ফুটবল ম্যাচের লাইভ ডাটা আপডেট হচ্ছে...", parse_mode='Markdown')
+        msg = fetch_live_matches("soccer_epl")
+        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+    elif query.data == "tips_cricket":
+        await query.edit_message_text("⏳ ক্রিকেট ম্যাচের লাইভ ডাটা আপডেট হচ্ছে...", parse_mode='Markdown')
+        msg = fetch_live_matches("cricket_international")
+        await query.edit_message_text(msg, parse_mode='Markdown', reply_markup=get_main_inline_keyboard())
+    elif query.data == "ai_predict":
+        user_state[user_id] = "WAITING_FOR_MATCH_NAME"
+        await query.edit_message_text("🧠 *AI প্রস্তুত!* যেকোনো ম্যাচের নাম লিখে বার্তা পাঠান:", parse_mode='Markdown')
 
-# ----------------- মেইন রানার -----------------
-async def main():
-    token = os.getenv("TELEGRAM_TOKEN")
-    if not token:
-        print("Error: TELEGRAM_TOKEN পাওয়া যায়নি!")
-        return
-
-    application = ApplicationBuilder().token(token).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("broadcast", broadcast_command))  # ব্রডকাস্ট হ্যান্ডলার
-    application.add_handler(CallbackQueryHandler(button_click))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
+# ----------------- সার্ভার রানার -----------------
+def run_flask():
     port = int(os.environ.get("PORT", 8080))
     server = make_server("0.0.0.0", port, app)
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, server.serve_forever)
-
-    print("বট সফলভাবে চালু হয়েছে...")
-    async with application:
-        await application.start()
-        await application.updater.start_polling()
-        await asyncio.Event().wait()
+    server.serve_forever()
 
 if __name__ == "__main__":
-    asyncio.run(main())
-  
+    token = os.getenv("TELEGRAM_TOKEN")
+    if not token:
+        print("Error: TELEGRAM_TOKEN পাওয়া যায়নি!")
+    else:
+        threading.Thread(target=run_flask, daemon=True).start()
+        
+        application = ApplicationBuilder().token(token).build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button_click))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        print("Sports Betting Tips Bot চালু হয়েছে...")
+        application.run_polling()
+                                          
