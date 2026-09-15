@@ -1,5 +1,6 @@
-Flask
-requests
-python-telegram-bot
+aiohttp
 beautifulsoup4
+flask
+python-telegram-bot
+requests
 werkzeug
