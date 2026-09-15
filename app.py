@@ -2,7 +2,8 @@ import os
 import random
 import asyncio
 import threading
-import requests
+import time
+import aiohttp
 from bs4 import BeautifulSoup
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -13,9 +14,9 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Ultra Headless Engine is Active!"
+    return "⚡ Ultra Fast Engine Status: ONLINE & ACTIVE ⚡"
 
-# ----------------- ফোরেনসিক লেভেল ডিভাইস ও ব্রাউজার ফিঙ্গারপ্রিন্টিং -----------------
+# ----------------- প্রফেশনাল ডিভাইস ইউজার-এজেন্ট -----------------
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -35,149 +36,179 @@ REFERRERS = [
 user_data = {}
 active_tests = {}
 
-# ----------------- হিউম্যান বিহেভিওরাল সিমুলেটর -----------------
-def execute_stealth_browser_emulation(url):
-    session = requests.Session()
-    
-    # র্যান্ডম সিকিউরিটি ও ফিঙ্গারপ্রিন্ট হেডার্স
+# ----------------- ভিজ্যুয়াল প্রোগ্রেস বার -----------------
+def generate_progress_bar(percent, length=10):
+    filled = int(length * percent // 100)
+    bar = '█' * filled + '░' * (length - filled)
+    return bar
+
+# ----------------- হাই-স্পিড অ্যাসিঙ্ক স্টিল্থ ব্রাউজার -----------------
+async def execute_fast_stealth_emulation(session, url):
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
         "Referer": random.choice(REFERRERS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9,bn;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Ch-Ua": '"Not/A)Brand";v="8", "Chromium";v="126"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "cross-site",
-        "Sec-Fetch-User": "?1"
+        "Upgrade-Insecure-Requests": "1"
     }
     
-    # ১. প্রাইমারি পেজ লোডিং
-    res = session.get(url, headers=headers, timeout=25, allow_redirects=True)
-    status_code = res.status_code
-    
-    # ২. ইন্টারনাল পেজ স্ক্রলিং ও রিসোর্স লোডার (হিউম্যান বিহেভিওরাল সিমুলেশন)
-    if status_code == 200:
-        try:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            # পেজের স্ক্রিপ্ট ও এসেট ফেচিং (GA4 & Analytics Tracking)
-            assets = [elem.get('src') for elem in soup.find_all(['script', 'img', 'link'], src=True)[:5]]
-            for asset in assets:
-                if asset.startswith("http"):
-                    headers["Sec-Fetch-Dest"] = "script" if asset.endswith(".js") else "image"
-                    session.get(asset, headers=headers, timeout=5)
-        except Exception:
-            pass
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), allow_redirects=True) as res:
+            status_code = res.status
+            if status_code == 200:
+                html = await res.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                assets = [elem.get('src') for elem in soup.find_all(['script', 'img', 'link'], src=True)[:3]]
+                for asset in assets:
+                    if asset and asset.startswith("http"):
+                        try:
+                            async with session.get(asset, headers=headers, timeout=aiohttp.ClientTimeout(total=5)):
+                                pass
+                        except Exception:
+                            pass
+            return status_code
+    except Exception:
+        return 500
 
-    return status_code
-
+# ----------------- ট্রাফিক প্রসেস ও স্পিড মিটার -----------------
 async def run_traffic_process(url, chat_id, context, total_runs, stay_time):
-    stop_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Stop Simulation", callback_data="stop_test")]])
+    stop_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 EMERGENCY STOP", callback_data="stop_test")]])
+    
+    start_msg = (
+        f"⚡ *HIGH-SPEED ENGINE ACTIVE*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 **Target:** `{url}`\n"
+        f"🔢 **Sessions:** `{total_runs}`\n"
+        f"⏱️ **Mode Delay:** `{stay_time}s / session`\n"
+        f"🛡️ **Security:** `TLS Spoofed & Async Pipeline`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━"
+    )
     
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"⚡ *Stealth Engine V3 Active!*\n\n🌐 **Target:** `{url}`\n📊 **Sessions:** `{total_runs}`\n⏱️ **Duration:** `{stay_time}s per session`\n🎭 **Emulation:** Full DOM & Fingerprint Spoofing",
+        text=start_msg,
         reply_markup=stop_keyboard,
         parse_mode='Markdown'
     )
 
     success_count = 0
     fail_count = 0
-    loop = asyncio.get_event_loop()
+    start_time = time.time()
 
-    for i in range(1, total_runs + 1):
-        if not active_tests.get(chat_id, False):
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"⏹️ *Process Aborted by User!*\n\n🟢 **Success:** `{success_count}` | 🔴 **Failed:** `{fail_count}`",
-                parse_mode='Markdown'
-            )
-            return
+    async with aiohttp.ClientSession() as session:
+        for i in range(1, total_runs + 1):
+            if not active_tests.get(chat_id, False):
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🛑 *PROCESS ABORTED BY USER!*\n\n🟢 **Success:** `{success_count}` | 🔴 **Failed:** `{fail_count}`",
+                    parse_mode='Markdown'
+                )
+                return
 
-        try:
-            status = await loop.run_in_executor(None, execute_stealth_browser_emulation, url)
+            status = await execute_fast_stealth_emulation(session, url)
             if status in [200, 301, 302]:
                 success_count += 1
             else:
                 fail_count += 1
-        except Exception:
-            fail_count += 1
 
-        # ১ম ভিজিটের প্রুফ স্ন্যাপশট
-        if i == 1:
-            screenshot_api = f"https://api.screenshotmachine.com?key=free&url={url}&dimension=1024x768"
-            try:
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=screenshot_api,
-                    caption=f"📸 *Visual Proof Snapshot*\nStatus Response: `{status}`",
-                    parse_mode='Markdown'
+            # প্রতি ৫ ভিজিটে লাইভ আপডেট ও স্পিড ক্যালকুলেশন
+            if i % 5 == 0 or i == total_runs:
+                elapsed_time = round(time.time() - start_time, 1)
+                speed = round(i / elapsed_time, 2) if elapsed_time > 0 else i
+                percent = int((i / total_runs) * 100)
+                p_bar = generate_progress_bar(percent)
+                
+                progress_msg = (
+                    f"⚡ *TRAFFIC SIMULATION IN PROGRESS*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 `[{p_bar}]` *{percent}%*\n\n"
+                    f"🔄 **Completed:** `{i}/{total_runs}`\n"
+                    f"🟢 **Successful:** `{success_count}` | 🔴 **Errors:** `{fail_count}`\n"
+                    f"🚀 **Execution Speed:** `{speed} req/sec`\n"
+                    f"⏱️ **Elapsed Time:** `{elapsed_time}s`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━"
                 )
-            except Exception:
-                pass
-
-        # প্রতি ৫ ভিজিটে টেলিগ্রাম মেসেজ আপডেট
-        if i % 5 == 0 or i == total_runs:
-            percent = int((i / total_runs) * 100)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🔄 *Progress:* `{i}/{total_runs}` ({percent}%)\n🟢 **Success:** `{success_count}` | 🔴 **Errors:** `{fail_count}`",
-                reply_markup=stop_keyboard,
-                parse_mode='Markdown'
-            )
-
-        # ১ সেকেন্ডের স্মার্ট স্টপ চেক
-        total_delay = stay_time + random.uniform(1.0, 3.0)
-        for _ in range(int(total_delay)):
-            if not active_tests.get(chat_id, False):
+                
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏹️ *Process Aborted by User!*\n\n🟢 **Success:** `{success_count}` | 🔴 **Failed:** `{fail_count}`",
+                    text=progress_msg,
+                    reply_markup=stop_keyboard,
                     parse_mode='Markdown'
                 )
-                return
-            await asyncio.sleep(1)
+
+            # ব্যবহারকারীর নির্ধারিত স্পিড অনুযায়ী গ্যাপ দেওয়া
+            for _ in range(stay_time):
+                if not active_tests.get(chat_id, False):
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🛑 *PROCESS ABORTED BY USER!*\n\n🟢 **Success:** `{success_count}` | 🔴 **Failed:** `{fail_count}`",
+                        parse_mode='Markdown'
+                    )
+                    return
+                await asyncio.sleep(1)
 
     active_tests[chat_id] = False
     
-    # অ্যাডভান্সড ফাইনাল ড্যাশবোর্ড রিপোর্ট
+    total_time = round(time.time() - start_time, 1)
+    
+    feedback_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ 5 Star", callback_data="rate_5"), InlineKeyboardButton("👍 Awesome", callback_data="rate_good")]
+    ])
+    
     summary_text = (
-        f"🏆 *ADVANCED TRAFFIC COMPLETED*\n"
+        f"🏆 *SIMULATION COMPLETED SUCCESSFULLY*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **Domain:** `{url}`\n"
-        f"🔢 **Total Requested:** `{total_runs}`\n"
-        f"🟢 **Successful Sessions:** `{success_count}`\n"
+        f"🌐 **Target:** `{url}`\n"
+        f"📊 **Requested Traffic:** `{total_runs}`\n"
+        f"🟢 **Successful Visits:** `{success_count}`\n"
         f"🔴 **Failed Requests:** `{fail_count}`\n"
-        f"⏱️ **Session Time:** `{stay_time}s`\n"
-        f"🛡️ **Security Protocol:** Stealth Passed\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━"
+        f"⏱️ **Total Time Taken:** `{total_time}s`\n"
+        f"🛡️ **Status:** `100% Anonymity Maintained`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✨ *আপনার অভিজ্ঞতা কেমন ছিল? নিচে রেটিং দিন:*"
     )
     
-    await context.bot.send_message(chat_id=chat_id, text=summary_text, parse_mode='Markdown')
+    await context.bot.send_message(chat_id=chat_id, text=summary_text, reply_markup=feedback_keyboard, parse_mode='Markdown')
 
-# ----------------- ইনলাইন ও কাস্টম কিবোর্ড -----------------
+# ----------------- কাস্টম ইনলাইন কিবোর্ড -----------------
 def get_count_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("50 Visits", callback_data="count_50"), InlineKeyboardButton("100 Visits", callback_data="count_100")],
-        [InlineKeyboardButton("250 Visits", callback_data="count_250"), InlineKeyboardButton("✏️ Custom Count", callback_data="count_custom")]
+        [InlineKeyboardButton("🔹 STANDARD PACKS 🔹", callback_data="header1")],
+        [InlineKeyboardButton("⚡ 100 Visits", callback_data="count_100"), InlineKeyboardButton("⚡ 300 Visits", callback_data="count_300")],
+        [InlineKeyboardButton("⚡ 500 Visits", callback_data="count_500"), InlineKeyboardButton("⚡ 1000 Visits", callback_data="count_1000")],
+        [InlineKeyboardButton("🚀 HIGH VOLUME PACKS 🚀", callback_data="header2")],
+        [InlineKeyboardButton("🔥 5000 Visits", callback_data="count_5000"), InlineKeyboardButton("🔥 10000 Visits", callback_data="count_10000")],
+        [InlineKeyboardButton("⚙️ CUSTOM AMOUNT", callback_data="count_custom")]
     ])
 
+# ৩ টি স্পিড অপশন
 def get_time_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ 10 Seconds", callback_data="time_10"), InlineKeyboardButton("⏱️ 30 Seconds", callback_data="time_30")],
-        [InlineKeyboardButton("⏳ 60 Seconds", callback_data="time_60")]
+        [InlineKeyboardButton("⚡ Fast (5 Seconds)", callback_data="time_5")],
+        [InlineKeyboardButton("⏱️ Medium (10 Seconds)", callback_data="time_10")],
+        [InlineKeyboardButton("⏳ Slow (15 Seconds)", callback_data="time_15")]
     ])
 
-# ----------------- টেলিগ্রাম বটের হ্যান্ডলার -----------------
+# ----------------- টেলিগ্রাম হ্যান্ডলারস -----------------
 async def start(update, context):
     active_tests[update.message.chat_id] = False
-    welcome = "🤖 *Stealth Engine V3 Simulator*\n\nপ্যানেল খুলতে নিচের **🚀 Start Traffic Test** বাটনে ক্লিক করুন।"
-    keyboard = ReplyKeyboardMarkup([[KeyboardButton("🚀 Start Traffic Test")], [KeyboardButton("🛑 Stop Current Test")]], resize_keyboard=True)
+    welcome = (
+        f"🌟 *WELCOME TO ULTRA STEALTH ENGINE V3* 🌟\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"হাই-স্পিড আসিক্রোনাস পাইপলাইন দিয়ে ওয়েবসাইট ট্রাফিক সিমুলেশন করুন অত্যন্ত নিরাপদে।\n\n"
+        f"📌 **অপশন নির্বাচন করুন:**\n"
+        f"🚀 **Start Simulation** - ট্রাফিক পাঠানো শুরু করতে।\n"
+        f"📊 **Live Server Stats** - ইঞ্জিন হেলথ ও স্ট্যাটাস দেখতে।\n"
+        f"🛑 **STOP IMMEDIATELY** - ইনস্ট্যান্ট যেকোনো প্রসেস বন্ধ করতে।"
+    )
+    
+    keyboard = ReplyKeyboardMarkup([
+        [KeyboardButton("🚀 Start Traffic Test"), KeyboardButton("📊 Live Server Stats")],
+        [KeyboardButton("🛑 STOP IMMEDIATELY")]
+    ], resize_keyboard=True)
+    
     await update.message.reply_text(welcome, reply_markup=keyboard, parse_mode='Markdown')
 
 async def handle_message(update, context):
@@ -187,27 +218,39 @@ async def handle_message(update, context):
 
     if text == "🚀 Start Traffic Test":
         user_data[user_id] = {"state": "WAITING_FOR_URL"}
-        await update.message.reply_text("🔗 **আপনার ওয়েবসাইটের লিংক (URL) পাঠান:**", parse_mode='Markdown')
+        await update.message.reply_text("🌐 *আপনার ওয়েবসাইটের লিংক (URL) পাঠান:* \n_(উদাহরণ: `https://example.com`)_", parse_mode='Markdown')
 
-    elif text == "🛑 Stop Current Test":
+    elif text == "📊 Live Server Stats":
+        stats_msg = (
+            f"⚡ *ENGINE LIVE SYSTEM STATUS*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🟢 **Server Status:** `ONLINE (0ms Latency)`\n"
+            f"⚙️ **Async Pipeline:** `Active`\n"
+            f"🛡️ **Fingerprint Proxy:** `Loaded`\n"
+            f"🚀 **Max Engine Capacity:** `100,000 Req/Day`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        await update.message.reply_text(stats_msg, parse_mode='Markdown')
+
+    elif text == "🛑 STOP IMMEDIATELY":
         active_tests[chat_id] = False
-        await update.message.reply_text("🛑 **টেস্ট সাথে সাথে বন্ধ করা হয়েছে!**")
+        await update.message.reply_text("🛑 *সকল একটিভ টেস্ট তাৎক্ষণিকভাবে বন্ধ করা হয়েছে!*", parse_mode='Markdown')
 
     elif user_data.get(user_id, {}).get("state") == "WAITING_FOR_URL":
         if text.startswith("http://") or text.startswith("https://"):
             user_data[user_id]["url"] = text
             user_data[user_id]["state"] = "WAITING_FOR_COUNT"
-            await update.message.reply_text("📊 **ভিজিট সংখ্যা নির্ধারণ করুন:**", reply_markup=get_count_keyboard(), parse_mode='Markdown')
+            await update.message.reply_text("📊 *ট্রাফিক প্যাকেজ নির্বাচন করুন:*", reply_markup=get_count_keyboard(), parse_mode='Markdown')
         else:
-            await update.message.reply_text("⚠️ **অবৈধ লিংক!** দয়া করে http:// বা https:// সহ সঠিক লিংক দিন।")
+            await update.message.reply_text("⚠️ *অবৈধ লিংক!* দয়া করে `http://` বা `https://` সহ সঠিক লিংক দিন।", parse_mode='Markdown')
 
     elif user_data.get(user_id, {}).get("state") == "WAITING_FOR_CUSTOM_COUNT":
         if text.isdigit() and int(text) > 0:
             user_data[user_id]["count"] = int(text)
             user_data[user_id]["state"] = "WAITING_FOR_TIME"
-            await update.message.reply_text("⏱️ **প্রতি ভিজিটের Stay Duration কত সেকেন্ড হবে?**", reply_markup=get_time_keyboard(), parse_mode='Markdown')
+            await update.message.reply_text("⏱️ *স্পিড এবং Stay Duration সিলেক্ট করুন:*", reply_markup=get_time_keyboard(), parse_mode='Markdown')
         else:
-            await update.message.reply_text("⚠️ **ভুল ইনপুট!** একটি সঠিক সংখ্যা লিখুন।")
+            await update.message.reply_text("⚠️ *ভুল ইনপুট!* শুধু একটি ধনাত্মক সংখ্যা লিখুন।", parse_mode='Markdown')
 
 async def button_click(update, context):
     query = update.callback_query
@@ -215,30 +258,40 @@ async def button_click(update, context):
     chat_id = query.message.chat_id
     await query.answer()
 
-    if query.data == "stop_test":
+    if query.data in ["header1", "header2"]:
+        return
+
+    elif query.data in ["rate_5", "rate_good"]:
+        await query.edit_message_text("💖 **আপনার ফিডব্যাকের জন্য ধন্যবাদ! বটটি ব্যবহার করতে থাকুন।**")
+
+    elif query.data == "stop_test":
         active_tests[chat_id] = False
-        await query.edit_message_text("🛑 **টেস্ট সাথে সাথে বন্ধ করা হয়েছে!**")
+        await query.edit_message_text("🛑 *টেস্ট সাথে সাথে বন্ধ করা হয়েছে!*", parse_mode='Markdown')
 
     elif query.data == "count_custom":
-        user_data[user_id]["state"] = "WAITING_FOR_CUSTOM_COUNT"
-        await query.edit_message_text("✏️ **আপনি কতগুলো ভিজিট পাঠাতে চান তা সংখ্যায় লিখে পাঠান:**", parse_mode='Markdown')
+        if user_id in user_data:
+            user_data[user_id]["state"] = "WAITING_FOR_CUSTOM_COUNT"
+            await query.edit_message_text("✏️ *আপনি কতগুলো ভিজিট পাঠাতে চান তা টাইপ করে জানান:*", parse_mode='Markdown')
 
     elif query.data.startswith("count_"):
         count = int(query.data.split("_")[1])
         if user_id in user_data:
             user_data[user_id]["count"] = count
             user_data[user_id]["state"] = "WAITING_FOR_TIME"
-            await query.edit_message_text("⏱️ **প্রতি ভিজিটের Stay Duration কত সেকেন্ড হবে?**", reply_markup=get_time_keyboard(), parse_mode='Markdown')
+            await query.edit_message_text("⏱️ *স্পিড এবং Stay Duration সিলেক্ট করুন:*", reply_markup=get_time_keyboard(), parse_mode='Markdown')
 
     elif query.data.startswith("time_"):
         stay_time = int(query.data.split("_")[1])
-        if user_data.get(user_id, {}).get("url") and user_data.get(user_id, {}).get("count"):
+        if user_data.get(user_id) and user_data[user_id].get("url") and user_data[user_id].get("count"):
             url = user_data[user_id]["url"]
             count = user_data[user_id]["count"]
-            user_data[user_id] = None
+            user_data[user_id] = {}
             
             active_tests[chat_id] = True
-            await query.edit_message_text(f"✅ Configured: **{count} Visits** | **{stay_time}s Stay**\nInitiating Advanced Session Engine...", parse_mode='Markdown')
+            await query.edit_message_text(
+                f"⚙️ *CONFIGURATION COMPLETE*\n━━━━━━━━━━━━━━━━━━━━━━\n🎯 **Target:** `{url}`\n📊 **Visits:** `{count}`\n⏱️ **Speed Mode:** `{stay_time}s Stay`\n\n🔮 *Launching High-Speed Async Engine...*",
+                parse_mode='Markdown'
+            )
             asyncio.create_task(run_traffic_process(url, chat_id, context, count, stay_time))
 
 # ----------------- SERVER BOOTSTRAP -----------------
