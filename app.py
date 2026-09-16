@@ -4,17 +4,76 @@ import asyncio
 import threading
 import time
 import aiohttp
+import sqlite3
 from bs4 import BeautifulSoup
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from werkzeug.serving import make_server
 
+# ================== অ্যাডমিন কনফিগারেশন ==================
+# এখানে আপনার টেলিগ্রাম আইডি নম্বর বসান (@userinfobot থেকে নিন)
+ADMIN_ID = 123456789  # <-- আপনার আইডি এখানে বসান
+
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "⚡ Ultra Fast Engine Status: ONLINE & ACTIVE ⚡"
+
+# ----------------- ডাটাবেস সেটআপ (SQLite) -----------------
+def init_db():
+    conn = sqlite3.connect('bot_users.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def add_user(user_id, username, first_name):
+    conn = sqlite3.connect('bot_users.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)", 
+                       (user_id, username, first_name))
+        conn.commit()
+    except Exception as e:
+        print(f"DB Error: {e}")
+    finally:
+        conn.close()
+
+def get_total_users():
+    conn = sqlite3.connect('bot_users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_today_users():
+    conn = sqlite3.connect('bot_users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users WHERE DATE(join_date) = DATE('now')")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_all_users():
+    conn = sqlite3.connect('bot_users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username, first_name, join_date FROM users ORDER BY join_date DESC LIMIT 50")
+    users = cursor.fetchall()
+    conn.close()
+    return users
+
+# ডাটাবেস ইনিশিয়ালাইজ করা
+init_db()
 
 # ----------------- প্রফেশনাল ডিভাইস ইউজার-এজেন্ট -----------------
 USER_AGENTS = [
@@ -113,7 +172,6 @@ async def run_traffic_process(url, chat_id, context, total_runs, stay_time):
             else:
                 fail_count += 1
 
-            # প্রতি ৫ ভিজিটে লাইভ আপডেট ও স্পিড ক্যালকুলেশন
             if i % 5 == 0 or i == total_runs:
                 elapsed_time = round(time.time() - start_time, 1)
                 speed = round(i / elapsed_time, 2) if elapsed_time > 0 else i
@@ -138,7 +196,6 @@ async def run_traffic_process(url, chat_id, context, total_runs, stay_time):
                     parse_mode='Markdown'
                 )
 
-            # ব্যবহারকারীর নির্ধারিত স্পিড অনুযায়ী গ্যাপ দেওয়া
             for _ in range(stay_time):
                 if not active_tests.get(chat_id, False):
                     await context.bot.send_message(
@@ -150,7 +207,6 @@ async def run_traffic_process(url, chat_id, context, total_runs, stay_time):
                 await asyncio.sleep(1)
 
     active_tests[chat_id] = False
-    
     total_time = round(time.time() - start_time, 1)
     
     feedback_keyboard = InlineKeyboardMarkup([
@@ -183,7 +239,6 @@ def get_count_keyboard():
         [InlineKeyboardButton("⚙️ CUSTOM AMOUNT", callback_data="count_custom")]
     ])
 
-# ৩ টি স্পিড অপশন
 def get_time_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ Fast (5 Seconds)", callback_data="time_5")],
@@ -191,8 +246,39 @@ def get_time_keyboard():
         [InlineKeyboardButton("⏳ Slow (15 Seconds)", callback_data="time_15")]
     ])
 
+# ----------------- অ্যাডমিন প্যানেল হ্যান্ডলার -----------------
+async def admin_panel(update, context):
+    user_id = update.message.from_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ আপনি এই কমান্ডটি ব্যবহার করার অনুমতি নেই।")
+        return
+
+    total = get_total_users()
+    today = get_today_users()
+    
+    msg = (
+        f"👑 *ADMIN CONTROL PANEL* 👑\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👥 **মোট ইউজার:** `{total}` জন\n"
+        f"📅 **আজকের নতুন ইউজার:** `{today}` জন\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"নিচের বাটনগুলো ব্যবহার করে আরও তথ্য দেখুন:"
+    )
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 সব ইউজারের লিস্ট", callback_data="admin_userlist")],
+        [InlineKeyboardButton("📢 ব্রডকাস্ট মেসেজ", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("🔄 রিফ্রেশ স্ট্যাটস", callback_data="admin_refresh")]
+    ])
+    
+    await update.message.reply_text(msg, reply_markup=keyboard, parse_mode='Markdown')
+
 # ----------------- টেলিগ্রাম হ্যান্ডলারস -----------------
 async def start(update, context):
+    user = update.message.from_user
+    # ডাটাবেসে ইউজার সেভ করা
+    add_user(user.id, user.username, user.first_name)
+    
     active_tests[update.message.chat_id] = False
     welcome = (
         f"🌟 *WELCOME TO ULTRA STEALTH ENGINE V3* 🌟\n"
@@ -215,6 +301,10 @@ async def handle_message(update, context):
     user_id = update.message.from_user.id
     chat_id = update.message.chat_id
     text = update.message.text
+
+    # ইউজারকে ডাটাবেসে সেভ করা (প্রতিবার মেসেজ দিলে)
+    user = update.message.from_user
+    add_user(user.id, user.username, user.first_name)
 
     if text == "🚀 Start Traffic Test":
         user_data[user_id] = {"state": "WAITING_FOR_URL"}
@@ -258,6 +348,51 @@ async def button_click(update, context):
     chat_id = query.message.chat_id
     await query.answer()
 
+    # --- অ্যাডমিন প্যানেলের বাটনগুলো ---
+    if query.data == "admin_refresh":
+        if user_id != ADMIN_ID: return
+        total = get_total_users()
+        today = get_today_users()
+        msg = (
+            f"👑 *ADMIN CONTROL PANEL* 👑\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👥 **মোট ইউজার:** `{total}` জন\n"
+            f"📅 **আজকের নতুন ইউজার:** `{today}` জন\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔄 *স্ট্যাটস রিফ্রেশ করা হয়েছে!*"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 সব ইউজারের লিস্ট", callback_data="admin_userlist")],
+            [InlineKeyboardButton("📢 ব্রডকাস্ট মেসেজ", callback_data="admin_broadcast")],
+            [InlineKeyboardButton("🔄 রিফ্রেশ স্ট্যাটস", callback_data="admin_refresh")]
+        ])
+        await query.edit_message_text(msg, reply_markup=keyboard, parse_mode='Markdown')
+        return
+
+    elif query.data == "admin_userlist":
+        if user_id != ADMIN_ID: return
+        users = get_all_users()
+        if not users:
+            await query.edit_message_text("❌ এখনো কোনো ইউজার নেই।")
+            return
+        
+        text = "📋 *সর্বশেষ ৫০ জন ইউজারের লিস্ট:*\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        for u in users:
+            name = u[2] if u[2] else "Unknown"
+            uname = f"@{u[1]}" if u[1] else "No Username"
+            text += f"👤 {name} | {uname} | `{u[0]}`\n"
+        
+        text += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Panel", callback_data="admin_refresh")]])
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode='Markdown')
+        return
+
+    elif query.data == "admin_broadcast":
+        if user_id != ADMIN_ID: return
+        await query.edit_message_text("📢 *ব্রডকাস্ট মেসেজ পাঠাতে চাইলে নিচের ফরম্যাটে মেসেজ দিন:*\n\n`/broadcast আপনার মেসেজ`", parse_mode='Markdown')
+        return
+
+    # --- সাধারণ ইউজারদের বাটন ---
     if query.data in ["header1", "header2"]:
         return
 
@@ -294,6 +429,34 @@ async def button_click(update, context):
             )
             asyncio.create_task(run_traffic_process(url, chat_id, context, count, stay_time))
 
+# ----------------- ব্রডকাস্ট কমান্ড -----------------
+async def broadcast(update, context):
+    user_id = update.message.from_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ আপনি এই কমান্ডটি ব্যবহার করার অনুমতি নেই।")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("⚠️ ব্যবহার: `/broadcast আপনার মেসেজ`", parse_mode='Markdown')
+        return
+    
+    msg = " ".join(context.args)
+    users = get_all_users()
+    success = 0
+    fail = 0
+    
+    await update.message.reply_text(f"📢 ব্রডকাস্ট শুরু হচ্ছে... ({len(users)} জন ইউজার)")
+    
+    for u in users:
+        try:
+            await context.bot.send_message(chat_id=u[0], text=f"📢 *অ্যাডমিন নোটিশ:*\n\n{msg}", parse_mode='Markdown')
+            success += 1
+            await asyncio.sleep(0.05)  # টেলিগ্রাম লিমিট এড়াতে
+        except Exception:
+            fail += 1
+    
+    await update.message.reply_text(f"✅ ব্রডকাস্ট সম্পন্ন!\n\n🟢 সফল: {success}\n🔴 ব্যর্থ: {fail}")
+
 # ----------------- SERVER BOOTSTRAP -----------------
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -305,7 +468,13 @@ if __name__ == "__main__":
     if token:
         threading.Thread(target=run_flask, daemon=True).start()
         application = ApplicationBuilder().token(token).build()
+        
+        # হ্যান্ডলার যোগ করা
         application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("admin", admin_panel))
+        application.add_handler(CommandHandler("broadcast", broadcast))
         application.add_handler(CallbackQueryHandler(button_click))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        print("⚡ বট চালু হচ্ছে...")
         application.run_polling()
