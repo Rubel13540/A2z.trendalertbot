@@ -11,9 +11,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from werkzeug.serving import make_server
 
-# ================== অ্যাডমিন কনফিগারেশন ==================
-# এখানে আপনার টেলিগ্রাম আইডি নম্বর বসান (@userinfobot থেকে নিন)
-ADMIN_ID = 123456789  # <-- আপনার আইডি এখানে বসান
+# ================== অ্যাডমিন কনফিগারেশন (Railway ভেরিয়েবল থেকে নেবে) ==================
+ADMIN_ID = int(os.getenv("ADMIN_ID", 123456789))
 
 app = Flask(__name__)
 
@@ -276,7 +275,6 @@ async def admin_panel(update, context):
 # ----------------- টেলিগ্রাম হ্যান্ডলারস -----------------
 async def start(update, context):
     user = update.message.from_user
-    # ডাটাবেসে ইউজার সেভ করা
     add_user(user.id, user.username, user.first_name)
     
     active_tests[update.message.chat_id] = False
@@ -302,7 +300,6 @@ async def handle_message(update, context):
     chat_id = update.message.chat_id
     text = update.message.text
 
-    # ইউজারকে ডাটাবেসে সেভ করা (প্রতিবার মেসেজ দিলে)
     user = update.message.from_user
     add_user(user.id, user.username, user.first_name)
 
@@ -451,7 +448,7 @@ async def broadcast(update, context):
         try:
             await context.bot.send_message(chat_id=u[0], text=f"📢 *অ্যাডমিন নোটিশ:*\n\n{msg}", parse_mode='Markdown')
             success += 1
-            await asyncio.sleep(0.05)  # টেলিগ্রাম লিমিট এড়াতে
+            await asyncio.sleep(0.05)
         except Exception:
             fail += 1
     
@@ -469,7 +466,6 @@ if __name__ == "__main__":
         threading.Thread(target=run_flask, daemon=True).start()
         application = ApplicationBuilder().token(token).build()
         
-        # হ্যান্ডলার যোগ করা
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("admin", admin_panel))
         application.add_handler(CommandHandler("broadcast", broadcast))
