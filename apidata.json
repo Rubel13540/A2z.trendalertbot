@@ -1,0 +1,11 @@
+{
+  "cc": "880",
+  "target": "phone",
+  "services": [
+    {
+      "name": "Example API 1",
+      "url": "https://example.com/api/send",
+      "method": "POST"
+    }
+  ]
+}
